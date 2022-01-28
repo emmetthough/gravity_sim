@@ -12,6 +12,7 @@ plots
 sim_data
 lib/symmetric_attractor_profile_badplot.py
 lib/symmertic_attractor_profile_old.py
+lib/gravity_sim.egg-info
 
 processed.pkl
 !/.gitignore
