@@ -387,7 +387,7 @@ class holes_analysis:
         for i,component in enumerate(components):
             ax1[i].plot(sigfreqs, nsignals[:,i], 'o-', label=component+' newtonian')
             for j, lam in enumerate(lambdas):
-                ax1[i].semilogy(sigfreqs, yukasignals[j][:,i], 'o-', label=component+ f', $\lambda$ = {lam/1e-6:.1f}um')
+                ax1[i].plot(sigfreqs, yukasignals[j][:,i], 'o-', label=component+ f', $\lambda$ = {lam/1e-6:.1f}um')
             ax1[i].set_xticks(sigfreqs)
             ax1[i].legend(fontsize=12, loc='upper right')
             ax1[i].grid()
