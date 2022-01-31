@@ -392,7 +392,7 @@ class holes_analysis:
             ax1[i].legend(fontsize=12, loc='upper right')
             ax1[i].grid()
             if log:
-                ax1[i].set_yaxis('log')
+                ax1[i].set_yscale('log')
             
         return fig1, ax1
         
