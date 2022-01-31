@@ -281,6 +281,8 @@ class holes_analysis:
             
             ax[0,0].set_title('Newtonian', fontsize=18)
         
+        return fig, ax
+        
         
     def plot_asd(self, w=1, tint=10, fsamp=5e3, modulated=False):
         
@@ -347,9 +349,9 @@ class holes_analysis:
                 a.grid()
                 pass
         
-        return fig1
+        return fig1, ax1
     
-    def plot_signals(self, w=1, tint=10, fsamp=5e3, num_harmonics=10, modulated=False):
+    def plot_signals(self, w=1, tint=10, fsamp=5e3, num_harmonics=10, modulated=False, title='default', log=True):
         
         N, edge, hr, sep, height = self.params
         
@@ -376,17 +378,21 @@ class holes_analysis:
         ax1[2].set_xlabel('Frequency [Hz]', fontsize=18)
         if not modulated:
             title = f'{N} isotropic {hr}um radius holes {edge}um from edge, \n (sep, height)=({sep}, {height}), $\omega$={w}Hz, fsamp={fsamp/1e3:.1f}kHz'
-        else:
+        elif title=='default':
             title = f'{N} modulated {hr}um radius holes {edge}um from edge, \n (sep, height)=({sep}, {height}), $\omega$={w}Hz, fsamp={fsamp/1e3:.1f}kHz'
+        else:
+            title = title
         plt.suptitle(title, fontsize=20)
         
         for i,component in enumerate(components):
-            ax1[i].semilogy(sigfreqs, nsignals[:,i], 'o-', label=component+' newtonian')
+            ax1[i].plot(sigfreqs, nsignals[:,i], 'o-', label=component+' newtonian')
             for j, lam in enumerate(lambdas):
                 ax1[i].semilogy(sigfreqs, yukasignals[j][:,i], 'o-', label=component+ f', $\lambda$ = {lam/1e-6:.1f}um')
             ax1[i].set_xticks(sigfreqs)
             ax1[i].legend(fontsize=12, loc='upper right')
             ax1[i].grid()
+            if log:
+                ax1[i].set_yaxis('log')
             
-        return fig1
+        return fig1, ax1
         
