@@ -120,10 +120,15 @@ class holes_data:
                 phis = trial[sep]['phis']
                 for height in [key for key in trial[sep].keys() if key != 'phis']:
                     
-                    # grab force data
+                    # grab force data, make periodic in 0,2pi
                     newt_data = trial[sep][height]['newtonian']
+                    newt_data = np.concatenate((newt_data, newt_data[0,:].reshape(1,3)))
+                    
                     yuka_data = trial[sep][height]['yukawa']
+                    yuka_data = np.concatenate((yuka_data, yuka_data[0,:,:].reshape(1,yuka_data.shape[1],yuka_data.shape[2])))
                     lambdas = trial[sep][height]['lambdas']
+                    
+                    phis = np.concatenate((phis, [2*np.pi]))
                     
                     # newtonian interpolation
                     newt_interp = intp.interp1d(phis, newt_data.T, kind='cubic', axis=1)
@@ -158,14 +163,15 @@ class holes_analysis:
         
         N,from_edge,hr,sep,height = self.params
         trial = self.data[N][from_edge][hr][sep][height]
-
+        
+        # get force sampling functions
         newt_funcs = trial['newt_funcs']
         yuka_funcs = trial['yuka_funcs']
         lambdas = trial['lambdas']
         lower, upper = trial['bounds']
 
         # how far the attractor moves between samples
-        dphi = (upper-lower)*w/fsamp
+        dphi = 2*np.pi*w/fsamp
         phis = np.arange(lower, upper, dphi)
         
         # make force curve for one full rotation
@@ -176,72 +182,87 @@ class holes_analysis:
         yuka_one = np.array(yuka_one)
         
         # stack for subsequent revolutions within the integration period
-        N = int(round(w*tint))
-        n = newt_one.shape[1]
-        newt = np.zeros((3, N*n))
-        yuka = np.zeros((lambdas.size, 3, N*n))
+        N_full = int(w*tint // 1)
+        n_remain = w*tint % 1 # fractional rotations remaining
+        nphi = newt_one.shape[1] # number of phi samples in one rotation
+        
+        newt = np.zeros((3, N_full*nphi))
+        yuka = np.zeros((lambdas.size, 3, N_full*nphi))
+        
+        # stack
+        for i in np.arange(N_full):
+            newt[:,nphi*i:nphi*(i+1)] = newt_one
+            yuka[:,:,nphi*i:nphi*(i+1)] = yuka_one
+        
+        # how many samples remain
+        nphi_remain = int(round(n_remain*nphi))
+        
+        if nphi_remain != 0:
+            newt = np.concatenate((newt, newt_one[:,:nphi_remain]), axis=-1)
+            yuka = np.concatenate((yuka, yuka_one[:,:,:nphi_remain]), axis=-1)
+        
+        times = np.arange(0, tint, 1/fsamp)
 
-        for i in np.arange(N):
-            newt[:,n*i:n*(i+1)] = newt_one
-            yuka[:,:,n*i:n*(i+1)] = yuka_one
-
-        return np.arange(0, N/w, 1/fsamp), newt, (yuka, lambdas)
+        return times, newt, (yuka, lambdas)
 
     def asd(self, force_data, fsamp=5e3):
         # get full r,phi,z ASD in units of N/root(Hz)
         
         fft = np.fft.rfft(force_data) 
         freqs = np.fft.rfftfreq(force_data.shape[1], d=1/fsamp)
-        norm = np.sqrt(2.0*(freqs[1]-freqs[0]))*bu.fft_norm(force_data.shape[1], fsamp)
+        # norm = np.sqrt(2.0*(freqs[1]-freqs[0]))*bu.fft_norm(force_data.shape[1], fsamp)
+        
+        norm = np.sqrt(2 / (force_data.shape[1] * fsamp))
+        psd = norm**2 * (fft * fft.conj()).real
 
-        asd = np.abs(norm*fft)
+        # asd = np.abs(norm*fft)
+        asd = np.sqrt(psd)
 
         return freqs, asd
 
-    def signal_bins(self, psd_data, w=1, num_harmonics=10):
-        # extract 
+    def signal_bins(self, asd_data, w=1, num_harmonics=10, f0='default'):
 
-        freqs, psd = psd_data
+        freqs, asd = asd_data
         freq_inds = []
         harmonic_freqs = []
-        psd_vals = []
+        asd_vals = []
         
-        N = self.params[0]
+        if f0 == 'default':
+            f0 = self.params[0]
 
-        for i in np.arange(1, num_harmonics):
-            harmonic_freqs.append(N*w*i)
-            freq_ind = np.where(freqs==N*w*i)[0]
+        for i in np.arange(1, num_harmonics+1):
+            harmonic_freqs.append(f0*w*i)
+            freq_ind = np.arange(freqs.size)[freqs >= f0*w*i][0]
             freq_inds.append(freq_ind)
-            if len(psd.shape) == 1:
-                psd_vals.append(psd[freq_ind])
+            if len(asd.shape) == 1:
+                asd_vals.append(asd[freq_ind])
             else:
-                psd_vals.append(psd[:,freq_ind])
-
-        return freq_inds, harmonic_freqs, np.array(psd_vals)
+                asd_vals.append(asd[:,freq_ind])
+                
+        return freq_inds, harmonic_freqs, np.array(asd_vals)
     
-    def sum_harmonics(self, w=1, tint=10, fsamp=5e3, num_harmonics=10, verbose=False):
+    def sum_harmonics(self, w=1, tint=10, fsamp=5e3, num_harmonics=10, f0='default', verbose=False):
         
         # return array of summed harmonic signals
         # 'x' axis: axis of signal (radial, angular, axial)
         # 'y' axis: signal type (newtonian, yukawa)
         
-        N = self.params[0]
         times, newtsamp, (yukasamp, lambdas) = self.sample_Gdata(w=w, tint=tint, fsamp=fsamp)
         
         freqs, newtasd = self.asd(newtsamp, fsamp=fsamp)
-        inds, sigfreqs, nsignals = self.signal_bins((freqs, newtasd), w=w, num_harmonics=num_harmonics)
+        inds, sigfreqs, nsignals = self.signal_bins((freqs, newtasd), w=w, num_harmonics=num_harmonics, f0=f0)
                 
         yukasignals = []
         for i in np.arange(yukasamp.shape[0]):
-            _, yukaasd = self.asd(yukasamp[i], fsamp=5e3)
-            _, _, yukasignal = self.signal_bins((freqs, yukaasd), w=w, num_harmonics=num_harmonics)
+            _, yukaasd = self.asd(yukasamp[i], fsamp=fsamp)
+            _, _, yukasignal = self.signal_bins((freqs, yukaasd), w=w, num_harmonics=num_harmonics, f0=f0)
             yukasignals.append(yukasignal)
             
         harmonic_sum = np.zeros((1+lambdas.size, 3))
-        harmonic_sum[0,:] = np.sum(nsignals[:,:,0], axis=0)
+        harmonic_sum[0,:] = np.sum(nsignals, axis=0)
         
         for i in range(lambdas.size):
-            harmonic_sum[1+i, :] = np.sum(yukasignals[i][:,:,0], axis=0)
+            harmonic_sum[1+i, :] = np.sum(yukasignals[i], axis=0)
             
         if verbose:
             print(f'First {num_harmonics} harmonics:')
@@ -284,20 +305,20 @@ class holes_analysis:
         return fig, ax
         
         
-    def plot_asd(self, w=1, tint=10, fsamp=5e3, modulated=False):
+    def plot_asd(self, w=1, tint=10, fsamp=5e3, f0='default', modulated=False):
         
         N, edge, hr, sep, height = self.params
         
         times, newtsamp, (yukasamp, lambdas) = self.sample_Gdata(w=w, tint=tint, fsamp=fsamp)
         
         freqs, newtasd = self.asd(newtsamp, fsamp=fsamp)
-        sigfreqs_ind, sigfreqs, nsignals = self.signal_bins((freqs, newtasd), w=w)
+        sigfreqs_ind, sigfreqs, nsignals = self.signal_bins((freqs, newtasd), w=w, f0=f0)
         
         yukaasds = []
         yukasignals = []
         for i in np.arange(yukasamp.shape[0]):
-            _, yukaasd = self.asd(yukasamp[i], fsamp=5e3)
-            yukasignal = self.signal_bins((freqs, yukaasd), w=w)
+            _, yukaasd = self.asd(yukasamp[i], fsamp=fsamp)
+            yukasignal = self.signal_bins((freqs, yukaasd), w=w, f0=f0)
             yukaasds.append(yukaasd)
             yukasignals.append(yukasignal)
             
@@ -317,16 +338,19 @@ class holes_analysis:
             title = f'{N} modulated {hr}um radius holes {edge}um from edge, \n (sep, height)=({sep}, {height}), $\omega$={w}Hz, fsamp={fsamp/1e3:.1f}kHz'
         plt.suptitle(title, fontsize=20)
         
+        if f0 == 'default':
+            f0 = self.params[0]
+        
         for i, component in enumerate(components):
             ax1[i,0].loglog(freqs, newtasd[i], label=component)
             ax1[i,0].scatter(w, newtasd[i][np.where(freqs==w)], color='g', marker='x', label='Drive')
-            ax1[i,0].scatter(N*w, newtasd[i][np.where(freqs==N*w)], color='r', marker='x', label='Fundamental')
+            ax1[i,0].scatter(f0*w, newtasd[i][np.where(freqs==f0*w)], color='r', marker='x', label='Fundamental')
             mins = [newtasd[i][np.where(freqs==w)]]
             maxs = [np.max(newtasd[i])]
             for j, lam in enumerate(lambdas): 
                 ax1[i,1].loglog(freqs+j*shift, yukaasds[j][i], alpha=0.7, label=component+ f', $\lambda$ = {lam/1e-6:.1f}um')
                 ax1[i,1].scatter(w+j*shift, yukaasds[j][i][np.where(freqs==w)], color='g', marker='x')
-                ax1[i,1].scatter(N*w+j*shift, yukaasds[j][i][np.where(freqs==N*w)], color='r', marker='x')
+                ax1[i,1].scatter(f0*w+j*shift, yukaasds[j][i][np.where(freqs==f0*w)], color='r', marker='x')
                 
                 mins.append(yukaasds[j][i][np.where(freqs==w)])
                 maxs.append(np.max(yukaasds[j][i]))
@@ -351,20 +375,20 @@ class holes_analysis:
         
         return fig1, ax1
     
-    def plot_signals(self, w=1, tint=10, fsamp=5e3, num_harmonics=10, modulated=False, title='default', log=True):
+    def plot_signals(self, w=1, tint=10, fsamp=5e3, num_harmonics=10, modulated=False, title='default', log=True, f0='default'):
         
         N, edge, hr, sep, height = self.params
         
         times, newtsamp, (yukasamp, lambdas) = self.sample_Gdata(w=w, tint=tint, fsamp=fsamp)
         
-        freqs, newtasd = self.asd(newtsamp, fsamp=5e3)
-        sigfreqs_ind, sigfreqs, nsignals = self.signal_bins((freqs, newtasd), w=w, num_harmonics=num_harmonics)
+        freqs, newtasd = self.asd(newtsamp, fsamp=fsamp)
+        sigfreqs_ind, sigfreqs, nsignals = self.signal_bins((freqs, newtasd), w=w, num_harmonics=num_harmonics, f0=f0)
         
         yukaasds = []
         yukasignals = []
         for i in np.arange(yukasamp.shape[0]):
             _, yukaasd = self.asd(yukasamp[i], fsamp=5e3)
-            _,_, yukasignal = self.signal_bins((freqs, yukaasd), w=w, num_harmonics=num_harmonics)
+            _,_, yukasignal = self.signal_bins((freqs, yukaasd), w=w, num_harmonics=num_harmonics, f0=f0)
             yukaasds.append(yukaasd)
             yukasignals.append(yukasignal)
             
