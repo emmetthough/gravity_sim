@@ -23,10 +23,10 @@ class attractor_profile:
         
         # create partitions
         
-        self.n_r = round((R - 0.5*dr) / dr)
+        self.n_r = int(round((R - 0.5*dr) / dr))
         self.dr_dyn = (R - 0.5*dr) / self.n_r
         
-        self.n_z = round(z_size / dz)
+        self.n_z = int(round(z_size / dz))
         self.dz_dyn = z_size / self.n_z
         
         # Center points of radial partitions, in m
@@ -101,8 +101,34 @@ class attractor_profile:
             self.data[r] = radial_partition
         
         self.is_built = True
-        # only for uniform test
-        # self.sum_dm *= len(self.zz)
+        self.build_numpy()
+        
+    def build_numpy(self):
+        
+        # converts from dictionary structure (convenient for storing metadata) to numpy arrays (faster indexing in computations)
+        
+        # get biggest data list
+        max_dm_size = self.data[self.rr[-1]]['data'].shape[1]
+        
+        # initialize big arrays, including 'sizes' used for indexing
+        self.mass_arr = np.zeros((self.rr.size, self.zz.size, max_dm_size))
+        self.phis_arr = np.zeros((self.rr.size, max_dm_size))
+        self.sizes = np.zeros(self.rr.size, dtype=np.int16)
+        
+        # build 'em boyyyyy
+        i = -1
+        for r, partition in self.data.items():     
+            i += 1
+            
+            dm_arr = partition['data'] # shape??
+            if len(dm_arr.shape) == 1:
+                dm_arr = np.reshape(dm_arr, (dm_arr.size, 1))
+            pp = partition['params'][3]
+            size = int(pp.size)
+            
+            self.sizes[i] = size
+            self.phis_arr[i,:size] = pp
+            self.mass_arr[i,:,:size] = dm_arr
         
     def plot_xy(self, downsample=50, upsample=2, show_data=False, save=False):
         
@@ -183,50 +209,33 @@ class attractor_profile:
         
         i = -1
         
-        for r, partition in self.data.items():       
+        for i,r in enumerate(self.rr):      
             
-            dm_arr = partition['data'].T # transpose here for shape, fix in build attractor?
-            pp = partition['params'][3]
-                     
-            # create coordinate arrays to compute force vector at
-            psep, zsep = np.meshgrid(pp - pb, self.zz - zb, indexing='ij')
-            rsep = rb - r
-                       
-            # separation between attractor mesh and bead
-            sep = np.sqrt((rb**2) + (r**2) - 2*rb*r*np.cos(psep) + zsep**2)
+            dm_arr = self.mass_arr[i,:,:self.sizes[i]].T # transpose here for shape, fix in build attractor?
+            pp = self.phis_arr[i,:self.sizes[i]]
             
-            # separation in only r,phi
-            sep_rp = np.sqrt((rb**2) + (r**2) - 2*rb*r*np.cos(psep))
-            
-            if r == 0.:
-                sep = np.reshape(sep, dm_arr.shape)
-                sep_rp = np.reshape(sep_rp, dm_arr.shape)
-                    
-            # get full vector force at every point in meshgrid (i.e. every r,phi,z in partition)
-            full_vec_force = -1.0 * (4.*G*dm_arr*self.rhob*np.pi*self.Rb**3)/(3.*sep**2)
-            
-            # add 1% white noise
-            # full_vec_force += np.random.randn()*full_vec_force/100
-            
-            # get projections onto each unit vector and sum the force at all points on the partition
-            Fg[0] += np.sum(full_vec_force * (rb-r*np.cos(psep))/sep_rp)
-            Fg[1] += np.sum(full_vec_force * (r*np.sin(psep))/sep_rp)
-            Fg[2] += np.sum(full_vec_force * (zsep/sep))   
-            
-            if verbose:
-                print('r=', r)
-                print('dm_arr: ', dm_arr)
-                print('psep: ', psep*180/np.pi)
-                print('zsep: ', zsep)
-                print('sep: ', sep)
-                print('sep_rp: ', sep_rp)
-                print('full_vec_force: ', full_vec_force)
-                print('Fgr: ', full_vec_force * (rb-r*np.cos(psep))/sep_rp)
-                print('Fgp: ', full_vec_force * (r*np.sin(psep))/sep_rp)
-                print('Fgz: ', full_vec_force * (zsep/sep))
-                print()
-            
-        
+            if np.sum(dm_arr) != 0.:
+                # create coordinate arrays to compute force vector at
+                psep, zsep = np.meshgrid(pp - pb, self.zz - zb, indexing='ij')
+                rsep = rb - r
+
+                # separation between attractor mesh and bead
+                sep = np.sqrt((rb**2) + (r**2) - 2*rb*r*np.cos(psep) + zsep**2)
+
+                # separation in only r,phi
+                sep_rp = np.sqrt((rb**2) + (r**2) - 2*rb*r*np.cos(psep))
+
+                if r == 0.:
+                    sep = np.reshape(sep, dm_arr.shape)
+
+                # get full vector force at every point in meshgrid (i.e. every r,phi,z in partition)
+                full_vec_force = -1.0 * (4.*G*dm_arr*self.rhob*np.pi*self.Rb**3)/(3.*sep**2)
+
+                # get projections onto each unit vector and sum the force at all points on the partition
+                Fg[0] += np.sum(full_vec_force * (rb-r*np.cos(psep))/sep_rp)
+                Fg[1] += np.sum(full_vec_force * (r*np.sin(psep))/sep_rp)
+                Fg[2] += np.sum(full_vec_force * (zsep/sep))   
+
         return Fg
     
     
@@ -243,73 +252,52 @@ class attractor_profile:
         
         func = np.exp(-2. * self.Rb/l) * (1. + self.Rb/l) + self.Rb/l - 1.
         
-        for r, partition in self.data.items():
+        for i,r in enumerate(self.rr):      
             
-            dm_arr = partition['data'].T # transpose here for shape, fix in build attractor?
-            pp = partition['params'][3]
+            dm_arr = self.mass_arr[i,:,:self.sizes[i]].T # transpose here for shape, fix in build attractor?
+            pp = self.phis_arr[i,:self.sizes[i]]
             
-            # create coordinate arrays to compute force vector at
-            psep, zsep = np.meshgrid(pp - pb, self.zz - zb, indexing='ij')
-            rsep = rb - r
-                       
-            # separation between attractor mesh and SURFACE of bead
-            sep = np.sqrt((rb**2) + (r**2) - 2*rb*r*np.cos(psep) + zsep**2) - self.Rb
-            
-            # separation in only r,phi; to center for projections
-            sep_rp = np.sqrt((rb**2) + (r**2) - 2*rb*r*np.cos(psep))
-            
-            # yukawa terms (why?)
-            # where is alpha??
-            prefac = -((2.*G*dm_arr*self.rhob*np.pi) / (3.*(sep+self.Rb)**2))
-            yukterm = 3.*l**2 * (sep+self.Rb+l) * func * np.exp(-sep/l)
-            
-            # get full vector force at every point in meshgrid (i.e. every r,phi,z in partition)
-            full_vec_force = prefac * yukterm
-            
-            # add 1% white noise
-            # full_vec_force += np.random.randn()*full_vec_force/100
-            
-            # get projections onto each unit vector and sum the force at all points on the partition
-            Fg[0] += np.sum(full_vec_force * (rb-r*np.cos(psep))/sep_rp)
-            Fg[1] += np.sum(full_vec_force * (r*np.sin(psep))/sep_rp)
-            Fg[2] += np.sum(full_vec_force * (zsep/(sep+self.Rb)))               
+            if np.sum(dm_arr) != 0.:
+                
+                # create coordinate arrays to compute force vector at
+                psep, zsep = np.meshgrid(pp - pb, self.zz - zb, indexing='ij')
+                rsep = rb - r
+
+                # separation between attractor mesh and SURFACE of bead
+                sep = np.sqrt((rb**2) + (r**2) - 2*rb*r*np.cos(psep) + zsep**2) - self.Rb
+
+                # separation in only r,phi; to center for projections
+                sep_rp = np.sqrt((rb**2) + (r**2) - 2*rb*r*np.cos(psep))
+
+                # yukawa term
+                prefac = -((2.*G*dm_arr*self.rhob*np.pi) / (3.*(sep+self.Rb)**2))
+                yukterm = 3.*l**2 * (sep+self.Rb+l) * func * np.exp(-sep/l)
+
+                # get full vector force at every point in meshgrid (i.e. every r,phi,z in partition)
+                full_vec_force = prefac * yukterm
+
+                # add 1% white noise
+                # full_vec_force += np.random.randn()*full_vec_force/100
+
+                # get projections onto each unit vector and sum the force at all points on the partition
+                Fg[0] += np.sum(full_vec_force * (rb-r*np.cos(psep))/sep_rp)
+                Fg[1] += np.sum(full_vec_force * (r*np.sin(psep))/sep_rp)
+                Fg[2] += np.sum(full_vec_force * (zsep/(sep+self.Rb)))               
         
-        return Fg
+        return Fg      
     
     
-    def force_curve(self, sep, w, z=0., tint=10, fsamp=10e3, time_readout=False):
+    def full_gravity(self, sep, height, lambdas=None, nphi=5):
         
-        # should implement some sampling condition with dphi here
-        dphi = 2*np.pi*w/fsamp
-        phis = np.arange(0, 2*np.pi+dphi, dphi)
+        phis = np.linspace(0, 2*np.pi, nphi)
         
-        Fg_newtonian = [[],[],[]]
-        Fg_yukawa = [[],[],[]]
+        newt = np.zeros((nphi, 3))
+        yuka = np.zeros((nphi, lambdas.size, 3))
         
-        start = time.time()
+        for i,phi in enumerate(phis):
+            newt[i,:] = self.newtonian((self.R+sep, phi, height))
+            for j,lam in enumerate(lambdas):
+                yuka[i,j,:] = self.yukawa((self.R+sep, phi, height), l=lam)
         
-        for phi in tqdm_notebook(phis, desc='Building Full Force Curve'):
-            Fg_n = self.newtonian((self.R+sep, phi, z))
-            Fg_y = self.yukawa((self.R+sep, phi, z))
+        return phis, newt, yuka
             
-            for i in range(3):
-                Fg_newtonian[i].append(Fg_n[i])
-                Fg_yukawa[i].append(Fg_y[i])
-                
-        end = time.time()
-        
-        comptime = end-start
-        N = phis.size*len(self.data.keys())
-        
-        if time_readout:
-            print('{} computations took {:.3f}s'.format(N, comptime))
-                
-        Fg_newtonian = np.array(Fg_newtonian)
-        Fg_yukawa = np.array(Fg_yukawa)
-        
-        if tint > 1:
-            for i in range(tint-1):
-                Fg_newtonian = np.hstack((Fg_newtonian, Fg_newtonian[:,1:]))
-                Fg_yukawa = np.hstack((Fg_yukawa, Fg_yukawa[:,1:]))
-        
-        return Fg_newtonian, Fg_yukawa, (N, comptime)

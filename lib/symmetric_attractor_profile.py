@@ -22,10 +22,10 @@ class attractor_profile:
         
         # create partitions
         
-        self.n_r = round((R - 0.5*dr) / dr)
+        self.n_r = int(round((R - 0.5*dr) / dr))
         self.dr_dyn = (R - 0.5*dr) / self.n_r
         
-        self.n_z = round(z_size / dz)
+        self.n_z = int(round(z_size / dz))
         self.dz_dyn = z_size / self.n_z
         
         # Center points of radial partitions, in m
