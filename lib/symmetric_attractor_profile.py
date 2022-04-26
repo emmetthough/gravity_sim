@@ -8,7 +8,7 @@ from numpy.fft import fft, fftfreq
 
 class attractor_profile:
     
-    def __init__(self, R, z_size=1, dr=1, dz=1, dphi=1, Rb=5, rhob=1850.):
+    def __init__(self, R, z_size, dr=1, dz=1, dphi=1, Rb=5, rhob=1850.):
         
         # give all params in microns
         
@@ -241,30 +241,32 @@ class attractor_profile:
             dm_arr = self.mass_arr[i,:,:self.sizes[i]].T # transpose here for shape, fix in build attractor?
             pp = self.phis_arr[i,:self.sizes[i]]
             
-            # create coordinate arrays to compute force vector at
-            psep, zsep = np.meshgrid(pp - pb, self.zz - zb, indexing='ij')
-            rsep = rb - r
-                       
-            # separation between attractor mesh and SURFACE of bead
-            sep = np.sqrt((rb**2) + (r**2) - 2*rb*r*np.cos(psep) + zsep**2) - self.Rb
+            if np.sum(dm_arr) != 0.:
             
-            # separation in only r,phi; to center for projections
-            sep_rp = np.sqrt((rb**2) + (r**2) - 2*rb*r*np.cos(psep))
-            
-            # yukawa term
-            prefac = -((2.*G*dm_arr*self.rhob*np.pi) / (3.*(sep+self.Rb)**2))
-            yukterm = 3.*l**2 * (sep+self.Rb+l) * func * np.exp(-sep/l)
-            
-            # get full vector force at every point in meshgrid (i.e. every r,phi,z in partition)
-            full_vec_force = prefac * yukterm
-            
-            # add 1% white noise
-            # full_vec_force += np.random.randn()*full_vec_force/100
-            
-            # get projections onto each unit vector and sum the force at all points on the partition
-            Fg[0] += np.sum(full_vec_force * (rb-r*np.cos(psep))/sep_rp)
-            Fg[1] += np.sum(full_vec_force * (r*np.sin(psep))/sep_rp)
-            Fg[2] += np.sum(full_vec_force * (zsep/(sep+self.Rb)))               
+                # create coordinate arrays to compute force vector at
+                psep, zsep = np.meshgrid(pp - pb, self.zz - zb, indexing='ij')
+                rsep = rb - r
+
+                # separation between attractor mesh and SURFACE of bead
+                sep = np.sqrt((rb**2) + (r**2) - 2*rb*r*np.cos(psep) + zsep**2) - self.Rb
+
+                # separation in only r,phi; to center for projections
+                sep_rp = np.sqrt((rb**2) + (r**2) - 2*rb*r*np.cos(psep))
+
+                # yukawa term
+                prefac = -((2.*G*dm_arr*self.rhob*np.pi) / (3.*(sep+self.Rb)**2))
+                yukterm = 3.*l**2 * (sep+self.Rb+l) * func * np.exp(-sep/l)
+
+                # get full vector force at every point in meshgrid (i.e. every r,phi,z in partition)
+                full_vec_force = prefac * yukterm
+
+                # add 1% white noise
+                # full_vec_force += np.random.randn()*full_vec_force/100
+
+                # get projections onto each unit vector and sum the force at all points on the partition
+                Fg[0] += np.sum(full_vec_force * (rb-r*np.cos(psep))/sep_rp)
+                Fg[1] += np.sum(full_vec_force * (r*np.sin(psep))/sep_rp)
+                Fg[2] += np.sum(full_vec_force * (zsep/(sep+self.Rb)))               
         
         return Fg      
     
