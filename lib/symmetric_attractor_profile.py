@@ -8,7 +8,7 @@ from numpy.fft import fft, fftfreq
 
 class attractor_profile:
     
-    def __init__(self, R, z_size, dr=1, dz=1, dphi=1, Rb=5, rhob=1850.):
+    def __init__(self, R, z_size, dr=1, dz=1, dphi=1, Rb=5, rhob=1850., depth=None):
         
         # give all params in microns
         
@@ -22,15 +22,24 @@ class attractor_profile:
         
         # create partitions
         
-        self.n_r = int(round((R - 0.5*dr) / dr))
-        self.dr_dyn = (R - 0.5*dr) / self.n_r
+        if depth is None or depth == R:
+        
+            self.n_r = int(round((R - 0.5*dr) / dr))
+            self.dr_dyn = (R - 0.5*dr) / self.n_r
+            
+            # Center points of radial partitions, in m
+            rr = np.linspace(self.dr_dyn, R-(self.dr_dyn/2), self.n_r)
+            self.rr = np.concatenate(([0], rr))*1e-6
+            
+        else:
+            
+            self.n_r = int(depth // dr)
+            self.dr_dyn = depth / self.n_r
+            self.rr = np.linspace((R-depth) + (self.dr_dyn/2), R-(self.dr_dyn/2), self.n_r)*1e-6
+        
         
         self.n_z = int(round(z_size / dz))
         self.dz_dyn = z_size / self.n_z
-        
-        # Center points of radial partitions, in m
-        rr = np.linspace(self.dr_dyn, R-(self.dr_dyn/2), self.n_r)
-        self.rr = np.concatenate(([0], rr))*1e-6
         
         # Center points of z partitons, in m
         self.zz = np.linspace(-z_size/2 + self.dz_dyn/2, z_size/2 - self.dz_dyn/2, self.n_z)*1e-6
@@ -45,6 +54,7 @@ class attractor_profile:
         self.N = N
         self.dphi_sector = 2*np.pi/N
         self.sum_dm = 0.
+        self.n_pts = 0
         
         # dr, dz in um: convert
         dr = self.dr_dyn*1e-6
@@ -90,10 +100,11 @@ class attractor_profile:
                 # cylindrical symmetry for now
                 if cyl_sym:
                     for j,phi in enumerate(pp):
-                        rho = density_profile((r, phi, z)) # kg/m^3
+                        rho = density_profile((r, phi, 0)) # kg/m^3
                         dm = rho*dV # kg
                         data[:,j] = dm
                         self.sum_dm += dm*self.zz.size
+                        self.n_pts += 1*self.zz.size
                 else:
                     for i,z in enumerate(self.zz):
                         for j,phi in enumerate(pp):
@@ -101,6 +112,7 @@ class attractor_profile:
                             dm = rho*dV # kg
                             data[i,j] = dm
                             self.sum_dm += dm
+                            self.n_pts += 1
                             
                 radial_partition = {'params': (self.dr_dyn, dphi_dyn, self.dz_dyn, pp), 'data': data}
                 
@@ -115,6 +127,7 @@ class attractor_profile:
                     dm = rho*dV  # kg
                     data[i] = dm
                     self.sum_dm += dm
+                    self.sum_dm += 1
                     
                 radial_partition = {'params': (self.dr_dyn/2, 2*np.pi, self.dz_dyn, np.array([0.])), 'data': data} # phi value for center? None?
 
