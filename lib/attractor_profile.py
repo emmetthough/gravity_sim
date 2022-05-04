@@ -46,6 +46,7 @@ class attractor_profile:
         self.density_profile = density_profile
         z = 0. # considering cylindrical symmetry for now, can add wrapper for loop in z later
         self.sum_dm = 0.
+        self.n_pts = 0
         
         # dr, dz in um: convert
         dr = self.dr_dyn*1e-6
@@ -73,6 +74,7 @@ class attractor_profile:
                             dm = rho*dV # kg
                             data[i,j] = dm
                             self.sum_dm += dm
+                            self.n_pts += 1
                 else:
                     
                     for j,phi in enumerate(pp):
@@ -80,6 +82,7 @@ class attractor_profile:
                             dm = rho*dV # kg
                             data[:,j] = dm
                             self.sum_dm += dm*self.zz.size
+                            self.n_pts += 1*self.zz.size
 
                 radial_partition = {'params': (self.dr_dyn, dphi_dyn, self.dz_dyn, pp),
                                        'data': data}
@@ -94,6 +97,7 @@ class attractor_profile:
                     dm = rho*dV  # kg
                     data[i] = dm
                     self.sum_dm += dm
+                    self.n_pts += 1
                     
                 radial_partition = {'params': (self.dr_dyn/2, 2*np.pi, self.dz_dyn, np.array([0.])), 
                                  'data': data} # phi value for center? None?
