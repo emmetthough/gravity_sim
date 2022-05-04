@@ -13,11 +13,12 @@ parent = os.getcwd()
 class holes_data:
     # class for reading simulation data and building interpolating functions
     
-    def __init__(self, data_dir='/sim_data/'):
+    def __init__(self, data_dir='/sim_data/', build=True):
         self.data_dir = data_dir
         self.raw_data = self.process_raw_data()
         self.build_params()
-        self.data = self.build_Gfuncs()
+        if build:
+            self.data = self.build_Gfuncs()
     
     def get_dirs(self):
         # wrapper for getting dir names in data dir
@@ -69,7 +70,7 @@ class holes_data:
                 # extract params from filename
                 splits = file.split('_')
                 sep = float(splits[1])
-                height = float(splits[3].split('.')[0])
+                height = float(splits[3].split('.p')[0])
                 # read in the data
                 with open(file, 'rb') as f:
                     trial_dict = pickle.load(f)
@@ -122,27 +123,30 @@ class holes_data:
                     
                     # grab force data, make periodic in 0,2pi
                     newt_data = trial[sep][height]['newtonian']
-                    newt_data = np.concatenate((newt_data, newt_data[0,:].reshape(1,3)))
                     
                     yuka_data = trial[sep][height]['yukawa']
-                    yuka_data = np.concatenate((yuka_data, yuka_data[0,:,:].reshape(1,yuka_data.shape[1],yuka_data.shape[2])))
                     lambdas = trial[sep][height]['lambdas']
                     
-                    phis = np.concatenate((phis, [2*np.pi]))
+                    if phis[-1] != 2*np.pi:
+                        newt_data = np.concatenate((newt_data, newt_data[0,:].reshape(1,3)))
+                        yuka_data = np.concatenate((yuka_data, yuka_data[0,:,:].reshape(1,yuka_data.shape[1],yuka_data.shape[2])))
+                        phis = np.concatenate((phis, [2*np.pi]))
                     
-                    # newtonian interpolation
-                    newt_interp = intp.interp1d(phis, newt_data.T, kind='cubic', axis=1)
-                    
-                    # yukawa interpolation for each value of lambda
-                    yuka_interps = []
-                    for i in np.arange(lambdas.size):
-                        yuka_interp = intp.interp1d(phis, np.swapaxes(yuka_data[:,i,:], 0, 1), kind='cubic', axis=1)
-                        yuka_interps.append(yuka_interp)
+                    try:
+                        # newtonian interpolation
+                        newt_interp = intp.interp1d(phis, newt_data.T, kind='cubic', axis=1)
 
-                    data[N][from_edge][hr][sep][height]['newt_funcs'] = newt_interp
-                    data[N][from_edge][hr][sep][height]['yuka_funcs'] = yuka_interps
-                    data[N][from_edge][hr][sep][height]['bounds'] = (np.min(phis), np.max(phis))
+                        # yukawa interpolation for each value of lambda
+                        yuka_interps = []
+                        for i in np.arange(lambdas.size):
+                            yuka_interp = intp.interp1d(phis, np.swapaxes(yuka_data[:,i,:], 0, 1), kind='cubic', axis=1)
+                            yuka_interps.append(yuka_interp)
 
+                        data[N][from_edge][hr][sep][height]['newt_funcs'] = newt_interp
+                        data[N][from_edge][hr][sep][height]['yuka_funcs'] = yuka_interps
+                        data[N][from_edge][hr][sep][height]['bounds'] = (np.min(phis), np.max(phis))
+                    except:
+                        pass
         return data
     
     
@@ -325,7 +329,7 @@ class holes_analysis:
         components = ['radial', 'angular', 'axial']
             
         fig1,ax1 = plt.subplots(3, 2, figsize=(12,12), sharey=True)
-        shift = 0.25
+        shift = 0
         
         ax1[0,0].set_title('Newtonian', fontsize=18)
         ax1[0,1].set_title('Yukawa', fontsize=18)
@@ -387,7 +391,7 @@ class holes_analysis:
         yukaasds = []
         yukasignals = []
         for i in np.arange(yukasamp.shape[0]):
-            _, yukaasd = self.asd(yukasamp[i], fsamp=5e3)
+            _, yukaasd = self.asd(yukasamp[i], fsamp=fsamp)
             _,_, yukasignal = self.signal_bins((freqs, yukaasd), w=w, num_harmonics=num_harmonics, f0=f0)
             yukaasds.append(yukaasd)
             yukasignals.append(yukasignal)
