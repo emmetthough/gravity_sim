@@ -8,7 +8,7 @@ from numpy.fft import fft, fftfreq
 
 class attractor_profile:
     
-    def __init__(self, R, z_size=1, N=10, dr=1, dz=1, dphi=1, r_range=1.02, Rb=5, rhob=1850.):
+    def __init__(self, R, z_size=1, N=10, dr=1, dz=1, dphi=1, r_range=1.02, Rb=5, rhob=1850., depth=None):
         
         # give all params in microns
         
@@ -23,16 +23,24 @@ class attractor_profile:
         
         # create partitions
         
-        self.n_r = int(round((R - 0.5*dr) / dr))
-        self.dr_dyn = (R - 0.5*dr) / self.n_r
+        if depth is None or depth == R:
+        
+            self.n_r = int(round((R - 0.5*dr) / dr))
+            self.dr_dyn = (R - 0.5*dr) / self.n_r
+            
+            # Center points of radial partitions, in m
+            rr = np.linspace(self.dr_dyn, R-(self.dr_dyn/2), self.n_r)
+            self.rr = np.concatenate(([0], rr))*1e-6
+            
+        else:
+            
+            self.n_r = int(depth // dr)
+            self.dr_dyn = depth / self.n_r
+            self.rr = np.linspace((R-depth) + (self.dr_dyn/2), R-(self.dr_dyn/2), self.n_r)*1e-6
+        
         
         self.n_z = int(round(z_size / dz))
         self.dz_dyn = z_size / self.n_z
-        
-        # Center points of radial partitions, in m
-        rr = np.linspace(self.dr_dyn, R-(self.dr_dyn/2), self.n_r)
-        rr_excess = np.arange(R, R*r_range, self.dr_dyn)+self.dr_dyn/2
-        self.rr = np.concatenate(([0], rr, rr_excess))*1e-6
         
         # Center points of z partitons, in m
         self.zz = np.linspace(-z_size/2 + self.dz_dyn/2, z_size/2 - self.dz_dyn/2, self.n_z)*1e-6
@@ -134,7 +142,7 @@ class attractor_profile:
             self.phis_arr[i,:size] = pp
             self.mass_arr[i,:,:size] = dm_arr
         
-    def plot_xy(self, downsample=50, upsample=2, show_data=False, save=False):
+    def plot_xy(self, downsample=50, upsample=2, show_data=False, save=False, ret=False):
         
         # convert angular data to cartesian and display
         # converting back to um for ease
@@ -199,6 +207,9 @@ class attractor_profile:
             plt.savefig('attractor_profile.png', dpi=150)
         else:
             plt.show()
+            
+        if ret:
+            return fig,ax
             
         
     def newtonian(self, rb_vec, verbose=False):
